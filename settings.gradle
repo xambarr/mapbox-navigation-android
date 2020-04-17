@@ -14,3 +14,12 @@ include ':app',
         ':libnavigation-ui',
         ':libtesting-ui',
         ':libtesting-utils'
+include ':libnavui-alert'
+include ':libnavui-camera'
+include ':libnavui-dropin'
+include ':libnavui-feedback'
+include ':libnavui-guidance'
+include ':libnavui-junction'
+include ':libnavui-summary'
+include ':libnavui-route'
+include ':libnavui-voice'
