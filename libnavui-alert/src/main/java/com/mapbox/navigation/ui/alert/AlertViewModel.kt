@@ -14,11 +14,11 @@ class AlertViewModel : ViewModel() {
     private val alertViewActionProcessor = AlertViewActionProcessor()
 
     fun showAlertView(alertText: String) {
-        viewModelScope.launch {
-            alertViewActionProcessor.showViewProcessor(alertText).collect {
-                //channel.send(it)
-            }
-        }
+//        viewModelScope.launch {
+//            alertViewActionProcessor.showViewProcessor(alertText).collect {
+//                //channel.send(it)
+//            }
+//        }
     }
 
     fun hideAlertView() {

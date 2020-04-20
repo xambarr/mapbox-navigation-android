@@ -103,6 +103,9 @@ dependencies {
     implementation dependenciesList.mapboxAnnotationPlugin
     implementation dependenciesList.mapboxSdkTurf
 
+    implementation project(':libnavui-core')
+    implementation project(':libnavui-alert')
+
     // test
     androidTestImplementation project(':libtesting-ui')
     androidTestImplementation dependenciesList.testRunner

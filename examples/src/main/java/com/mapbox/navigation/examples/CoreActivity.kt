@@ -24,6 +24,7 @@ import com.mapbox.navigation.examples.core.SimpleMapboxNavigationKt
 import com.mapbox.navigation.examples.core.SummaryBottomSheetActivity
 import com.mapbox.navigation.examples.core.TripServiceActivityKt
 import com.mapbox.navigation.examples.core.TripSessionActivityKt
+import com.mapbox.navigation.examples.ui.TestActivity
 import kotlinx.android.synthetic.main.activity_core.*
 
 class CoreActivity : AppCompatActivity() {
@@ -137,7 +138,13 @@ class CoreActivity : AppCompatActivity() {
                 getString(R.string.title_debug_navigation_kotlin),
                 getString(R.string.description_debug_navigation_kotlin),
                 DebugMapboxNavigationKt::class.java
-            )
+            ),
+
+             SampleItem(
+                getString(R.string.title_debug_navigation_kotlin),
+                getString(R.string.description_debug_navigation_kotlin),
+                TestActivity::class.java
+        )
         )
     }
 }
