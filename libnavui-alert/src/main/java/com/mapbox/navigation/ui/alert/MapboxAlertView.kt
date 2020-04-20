@@ -1,27 +1,17 @@
 package com.mapbox.navigation.ui.alert
 
-import com.mapbox.navigation.base.trip.model.RouteProgress
-import com.mapbox.navigation.core.MapboxNavigation
-import com.mapbox.navigation.core.trip.session.RouteProgressObserver
+import android.content.Context
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.ViewModelProviders
 
-class MapboxAlertView(val mapboxNavigation: MapboxNavigation) {
+class MapboxAlertView(private val context: Context) {
 
-    val routeProgressObserver = object : RouteProgressObserver {
-        override fun onRouteProgressChanged(routeProgress: RouteProgress) {
-
-        }
+    private val viewModel by lazy(mode = LazyThreadSafetyMode.NONE) {
+        ViewModelProviders.of(context as FragmentActivity).get(AlertViewModel::class.java)
     }
 
-    fun initialize() {
-        mapboxNavigation.registerRouteProgressObserver(routeProgressObserver)
-    }
-
-    fun destroy() {
-        mapboxNavigation.unregisterRouteProgressObserver(routeProgressObserver)
-    }
-
-    fun showAlertView() {
-
+    fun showAlertView(text: String) {
+        viewModel.showAlertView(text)
     }
 
     fun hideView() {
