@@ -5,6 +5,8 @@ import android.graphics.Color
 import android.util.AttributeSet
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
+import com.mapbox.navigation.ui.base.AlertViewContract
+import com.mapbox.navigation.ui.base.model.AlertState
 import com.mapbox.navigation.utils.extensions.getStyledAttributes
 import kotlinx.android.synthetic.main.layout_alert_view.view.*
 import kotlinx.coroutines.CoroutineScope
@@ -34,7 +36,7 @@ class AlertView(
         }
     }
 
-    override fun render(state: AlertState) {
+    override fun render(data: AlertState) {
         context.getStyledAttributes(attributeSet, R.styleable.MapboxNavAlertView) {
             alertTextView.setTextColor(
                 ContextCompat.getColor(
@@ -42,7 +44,7 @@ class AlertView(
                 )
             )
         }
-        alertTextView.text = state.avText
-        visibility = state.viewVisibility
+        alertTextView.text = data.avText
+        visibility = data.viewVisibility
     }
 }

@@ -1,4 +1,4 @@
-package com.mapbox.navigation.ui.alert
+package com.mapbox.navigation.ui.base.model
 
 import android.view.View
 

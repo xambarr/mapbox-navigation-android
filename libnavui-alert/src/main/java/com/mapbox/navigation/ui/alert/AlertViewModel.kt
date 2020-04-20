@@ -2,8 +2,8 @@ package com.mapbox.navigation.ui.alert
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mapbox.navigation.ui.base.model.AlertState
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 class AlertViewModel : ViewModel() {
@@ -16,7 +16,7 @@ class AlertViewModel : ViewModel() {
     fun showAlertView(alertText: String) {
         viewModelScope.launch {
             alertViewActionProcessor.showViewProcessor(alertText).collect {
-                channel.send(it)
+                //channel.send(it)
             }
         }
     }

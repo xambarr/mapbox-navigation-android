@@ -12,7 +12,7 @@ dokka {
     outputDirectory = "$buildDir/javadoc"
     outputFormat = 'javadoc'
     configuration {
-        moduleName = 'libnavui-alert'
+        moduleName = 'libnavui-base'
         reportUndocumented = true
     }
 }
@@ -31,19 +31,7 @@ android {
 
 dependencies {
     // Mapbox dependencies
-    implementation project(':libnavui-base')
     implementation project(':libnavigation-util')
-
-    // Android dependencies
-    implementation dependenciesList.androidXCore
-    implementation dependenciesList.materialDesign
-    implementation dependenciesList.androidXAnnotation
-    implementation dependenciesList.androidXAppCompat
-    implementation dependenciesList.androidXConstraintLayout
-
-    // Lifecycle dependencies
-    implementation dependenciesList.lifecycleExtensions
-    implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:2.2.0"
 
     // Kotlin dependencies
     implementation dependenciesList.kotlinStdLib
