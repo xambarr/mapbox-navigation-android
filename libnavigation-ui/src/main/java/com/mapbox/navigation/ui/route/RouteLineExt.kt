@@ -1,49 +1,67 @@
 package com.mapbox.navigation.ui.route
 
 import android.content.Context
+import android.graphics.drawable.Drawable
 import com.mapbox.api.directions.v5.models.DirectionsRoute
 import com.mapbox.core.constants.Constants
+import com.mapbox.geojson.Feature
+import com.mapbox.geojson.FeatureCollection
 import com.mapbox.geojson.LineString
 import com.mapbox.libnavigation.ui.R
+import com.mapbox.mapboxsdk.maps.Style
+import com.mapbox.mapboxsdk.style.expressions.Expression
+import com.mapbox.mapboxsdk.style.layers.PropertyFactory
+import com.mapbox.mapboxsdk.style.sources.GeoJsonOptions
+import com.mapbox.mapboxsdk.style.sources.GeoJsonSource
+import com.mapbox.navigation.ui.internal.route.MapRouteLayerProvider
+import com.mapbox.navigation.ui.internal.route.MapRouteSourceProvider
 import com.mapbox.navigation.ui.internal.route.RouteConstants
+import com.mapbox.navigation.ui.route.RouteLineExt.calculateRouteLineSegmentsFromCongestion
+import com.mapbox.navigation.ui.route.RouteLineExt.generateRouteFeatureCollection
+import com.mapbox.navigation.ui.route.RouteLineExt.getExpressionAtOffset
+import com.mapbox.navigation.ui.route.RouteLineExt.getRouteLineSegments
+import com.mapbox.navigation.ui.route.RouteLineExt.getVanishRouteLineExpression
+import com.mapbox.navigation.ui.route.RouteLineExt.setRouteLineSource
+import com.mapbox.navigation.ui.route.RouteLineExt.updateRouteLine
 import com.mapbox.turf.TurfMeasurement
+import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
 
 
-private interface MemoizedCall<in F, out R> {
-    operator fun invoke(f: F): R
+private interface MemoizeCall<in F, out R> {
+    operator fun invoke(func: F): R
 }
 
-private class MemoizedHandler<F, in K : MemoizedCall<F, R>, out R>(val f: F) {
-    private val m = ConcurrentHashMap<K, R>()
-    operator fun invoke(k: K): R {
-        return m[k] ?: run({
-            val r = k(f)
-            m.putIfAbsent(k, r)
-            r
-        })
+private class MemoizeHandler<F, in K : MemoizeCall<F, R>, out R>(val func: F) {
+    private val callMap = ConcurrentHashMap<K, R>()
+    operator fun invoke(key: K): R {
+        return callMap[key] ?: run {
+            val result = key(func)
+            callMap.putIfAbsent(key, result)
+            result
+        }
     }
 }
 
-private data class MemoizeKey1<out P1, R>(val p1: P1) : MemoizedCall<(P1) -> R, R> {
-    override fun invoke(f: (P1) -> R) = f(p1)
+private data class MemoizeKey1<out P1, R>(val p1: P1) : MemoizeCall<(P1) -> R, R> {
+    override fun invoke(func: (P1) -> R) = func(p1)
 }
 
-private data class MemoizeKey3<out P1, out P2, out P3, R>(val p1: P1, val p2: P2, val p3: P3) : MemoizedCall<(P1, P2, P3) -> R, R> {
-    override fun invoke(f: (P1, P2, P3) -> R) = f(p1, p2, p3)
+private data class MemoizeKey3<out P1, out P2, out P3, R>(val p1: P1, val p2: P2, val p3: P3) : MemoizeCall<(P1, P2, P3) -> R, R> {
+    override fun invoke(func: (P1, P2, P3) -> R) = func(p1, p2, p3)
 }
 
 fun <P1, R> ((P1) -> R).memoize(): (P1) -> R {
     return object : (P1) -> R {
-        private val m = MemoizedHandler<((P1) -> R), MemoizeKey1<P1, R>, R>(this@memoize)
-        override fun invoke(p1: P1) = m(MemoizeKey1(p1))
+        private val handler = MemoizeHandler<((P1) -> R), MemoizeKey1<P1, R>, R>(this@memoize)
+        override fun invoke(p1: P1) = handler(MemoizeKey1(p1))
     }
 }
 
 fun <P1, P2, P3, R> ((P1, P2, P3) -> R).memoize(): (P1, P2, P3) -> R {
     return object : (P1, P2, P3) -> R {
-        private val m = MemoizedHandler<((P1, P2, P3) -> R), MemoizeKey3<P1, P2, P3, R>, R>(this@memoize)
-        override fun invoke(p1: P1, p2: P2, p3: P3) = m(MemoizeKey3(p1, p2, p3))
+        private val handler = MemoizeHandler<((P1, P2, P3) -> R), MemoizeKey3<P1, P2, P3, R>, R>(this@memoize)
+        override fun invoke(p1: P1, p2: P2, p3: P3) = handler(MemoizeKey3(p1, p2, p3))
     }
 }
 
@@ -51,9 +69,37 @@ data class RouteLineExpressionData2(val offset: Float, val segmentColor: Int)
 
 object RouteLineExt {
 
-    val getLineStringForRoute = { route: DirectionsRoute -> LineString.fromPolyline(route.geometry()!!, Constants.PRECISION_6) }.memoize()
+    val getLineStringForRoute: (route: DirectionsRoute) -> LineString = {
+            route: DirectionsRoute -> LineString.fromPolyline(route.geometry() ?: "", Constants.PRECISION_6)
+        }.memoize()
 
-    val getRouteLineSegments = {
+    val generateRouteFeatureCollection: (route: DirectionsRoute) -> FeatureCollection = { route: DirectionsRoute ->
+        val routeGeometry = getLineStringForRoute(route)
+        val routeFeature = Feature.fromGeometry(routeGeometry)
+        FeatureCollection.fromFeatures(listOf(routeFeature))
+    }.memoize()
+
+    val generateWaypointsFeatureCollection: (route: DirectionsRoute) -> FeatureCollection = { route: DirectionsRoute ->
+        val wayPointFeatures = mutableListOf<Feature>()
+        route.legs()?.forEach {
+            MapRouteLine.MapRouteLineSupport.buildWayPointFeatureFromLeg(it, 0)?.let { feature ->
+                wayPointFeatures.add(feature)
+            }
+
+            it.steps()?.let { steps ->
+                MapRouteLine.MapRouteLineSupport.buildWayPointFeatureFromLeg(it, steps.lastIndex)?.let { feature ->
+                    wayPointFeatures.add(feature)
+                }
+            }
+        }
+        FeatureCollection.fromFeatures(wayPointFeatures)
+    }.memoize()
+
+    val getRouteLineSegments: (
+        route: DirectionsRoute,
+        isPrimaryRoute: Boolean,
+        congestionColorProvider: (String, Boolean) -> Int
+    ) -> List<RouteLineExpressionData2> = {
         route: DirectionsRoute,
         isPrimaryRoute: Boolean,
         congestionColorProvider: (String, Boolean) -> Int ->
@@ -78,8 +124,6 @@ object RouteLineExt {
             )
         }
     }.memoize()
-
-
 
     fun calculateRouteLineSegmentsFromCongestion(
         congestionSections: List<String>,
@@ -139,183 +183,370 @@ object RouteLineExt {
         }
         return expressionStops
     }
+
+    fun updateRouteLine(expression: Expression, layerId:String, style: Style) {
+        if (style.isFullyLoaded) {
+            style.getLayer(layerId)?.setProperties(
+                PropertyFactory.lineGradient(
+                    expression
+                )
+            )
+        }
+    }
+
+    fun getExpressionAtOffset(
+        distanceOffset: Float,
+        routeLineExpressionData: List<RouteLineExpressionData2>,
+        trafficColorProvider: TrafficColorProvider): Expression {
+        val filteredItems = routeLineExpressionData.filter { it.offset > distanceOffset }
+        val trafficExpressions = when (filteredItems.isEmpty()) {
+            true -> when (routeLineExpressionData.isEmpty()) {
+                true -> listOf(RouteLineExpressionData2(distanceOffset, trafficColorProvider.routeUnknownColor))
+                false -> listOf(routeLineExpressionData.last().copy(offset = distanceOffset))
+            }
+            false -> {
+                val firstItemIndex = routeLineExpressionData.indexOf(filteredItems.first())
+                val fillerItem = if (firstItemIndex == 0) {
+                    routeLineExpressionData[firstItemIndex]
+                } else {
+                    routeLineExpressionData[firstItemIndex - 1]
+                }
+                listOf(fillerItem.copy(offset = distanceOffset)).plus(filteredItems)
+            }
+        }.map {
+            Expression.stop(
+                it.offset.toBigDecimal().setScale(9, BigDecimal.ROUND_DOWN),
+                Expression.color(it.segmentColor)
+            )
+        }
+
+        return Expression.step(
+            Expression.lineProgress(),
+            Expression.rgba(0, 0, 0, 0),
+            *trafficExpressions.toTypedArray()
+        )
+    }
+
+    fun initializeRouteLineMapSources(style: Style, mapRouteSourceProvider: MapRouteSourceProvider) {
+        if (style.isFullyLoaded) {
+            val wayPointGeoJsonOptions = GeoJsonOptions().withMaxZoom(16)
+            addSourceIfAbsent(RouteConstants.WAYPOINT_SOURCE_ID, wayPointGeoJsonOptions, style, mapRouteSourceProvider)
+
+            val routeLineGeoJsonOptions = GeoJsonOptions().withMaxZoom(16).withLineMetrics(true)
+            addSourceIfAbsent(RouteConstants.PRIMARY_ROUTE_SOURCE_ID, routeLineGeoJsonOptions, style, mapRouteSourceProvider)
+
+            val routeLineTrafficGeoJsonOptions = GeoJsonOptions().withMaxZoom(16).withLineMetrics(true)
+            addSourceIfAbsent(RouteConstants.PRIMARY_ROUTE_TRAFFIC_SOURCE_ID, routeLineTrafficGeoJsonOptions, style, mapRouteSourceProvider)
+
+            val alternativeRouteLineGeoJsonOptions =
+                GeoJsonOptions().withMaxZoom(16).withLineMetrics(true)
+            addSourceIfAbsent(RouteConstants.ALTERNATIVE_ROUTE_SOURCE_ID, alternativeRouteLineGeoJsonOptions, style, mapRouteSourceProvider)
+        }
+    }
+
+    fun addSourceIfAbsent(
+        sourceId: String,
+        sourceOptions: GeoJsonOptions,
+        style: Style,
+        mapRouteSourceProvider: MapRouteSourceProvider) {
+        if (style.getSource(sourceId) == null) {
+            val source = mapRouteSourceProvider.build(
+                RouteConstants.WAYPOINT_SOURCE_ID,
+                FeatureCollection.fromFeatures(listOf()),
+                sourceOptions
+            )
+            style.addSource(source)
+        }
+    }
+
+    fun setRouteLineSource(sourceId: String, style: Style, featureCollection: FeatureCollection) {
+        if (style.isFullyLoaded) {
+            style.getSourceAs<GeoJsonSource>(sourceId)?.setGeoJson(featureCollection)
+        }
+    }
+
+    fun initializeLayers(
+        style: Style,
+        layerProvider: MapRouteLayerProvider,
+        originIcon: Drawable,
+        destinationIcon: Drawable,
+        belowLayerId: String
+    ) {
+        // todo, wait for updated layer provider to be merged in.
+    }
+
+    fun getVanishRouteLineExpression(offset: Float, traveledColor: Int, defaultColor: Int): Expression {
+        return Expression.step(
+            Expression.lineProgress(),
+            Expression.color(traveledColor),
+            Expression.stop(
+                offset.toBigDecimal().setScale(9, BigDecimal.ROUND_DOWN),
+                Expression.color(defaultColor)
+            )
+        )
+    }
 }
 
-class TrafficColorProvider(
-    context: Context,
-    @androidx.annotation.StyleRes styleRes: Int
-) {
-    val routeLineShieldTraveledColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_routeLineShieldTraveledColor,
-            R.color.mapbox_navigation_route_shield_line_traveled_color,
-            context,
-            styleRes
-        )
-    }
+data class MapRouteLineState(
+    val vanishPointOffset: Float = 0f,
+    val routes: List<DirectionsRoute> = listOf()
+)
+
+interface MapRouteLineAPI {
+    fun draw(directionsRoute: DirectionsRoute)
+    fun draw(directionsRoutes: List<DirectionsRoute>)
+    fun hideRouteLineAtOffset(offset: Float)
+    fun decorateRouteLine(expression: Expression)
+    fun hideShieldLineAtOffset(offset: Float)
+}
+
+class MapRouteLine2(
+    private val mapRouteLineState: MapRouteLineState = MapRouteLineState(),
+    private val style: Style,
+    private val trafficColorProvider: TrafficColorProvider
+    ): MapRouteLineAPI {
+
+    private var currentRouteLineState = mapRouteLineState
 
 
-    val routeUnknownColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_routeUnknownCongestionColor,
-            R.color.mapbox_navigation_route_layer_congestion_unknown,
-            context,
-            styleRes
-        )
+    override fun draw(directionsRoute: DirectionsRoute) {
+        draw(listOf(directionsRoute))
     }
 
-    val routeDefaultColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_routeColor,
-            R.color.mapbox_navigation_route_layer_blue,
-            context,
-            styleRes
-        )
+    override fun draw(directionsRoutes: List<DirectionsRoute>) {
+        reset()
+        //todo
     }
 
-    val routeLowCongestionColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_routeLowCongestionColor,
-            R.color.mapbox_navigation_route_traffic_layer_color,
-            context,
-            styleRes
+    // todo maybe this shouldn't be here
+    override fun hideRouteLineAtOffset(offset: Float) {
+        val expression = getVanishRouteLineExpression(
+            offset,
+            trafficColorProvider.routeLineTraveledColor,
+            trafficColorProvider.routeDefaultColor
         )
+        updateRouteLine(expression, RouteConstants.PRIMARY_ROUTE_LAYER_ID, style)
     }
 
-    val routeModerateColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_routeModerateCongestionColor,
-            R.color.mapbox_navigation_route_layer_congestion_yellow,
-            context,
-            styleRes
+    // todo maybe this shouldn't be here
+    override fun hideShieldLineAtOffset(offset: Float) {
+        val expression = getVanishRouteLineExpression(
+            offset,
+            trafficColorProvider.routeLineShieldTraveledColor,
+            trafficColorProvider.routeShieldColor
         )
+        updateRouteLine(expression, RouteConstants.PRIMARY_ROUTE_SHIELD_LAYER_ID, style)
     }
 
-    val routeHeavyColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_routeHeavyCongestionColor,
-            R.color.mapbox_navigation_route_layer_congestion_heavy,
-            context,
-            styleRes
-        )
+    private fun hideTrafficLineAtOffset(offset: Float, directionsRoute: DirectionsRoute) {
+        val segments = getRouteLineSegments(directionsRoute, true, trafficColorProvider::getRouteColorForCongestion)
+        val expression = getExpressionAtOffset(offset, segments, trafficColorProvider)
+        updateRouteLine(expression, RouteConstants.PRIMARY_ROUTE_TRAFFIC_LAYER_ID, style)
     }
 
-    val routeSevereColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_routeSevereCongestionColor,
-            R.color.mapbox_navigation_route_layer_congestion_red,
-            context,
-            styleRes
-        )
+    // todo maybe this shouldn't be here
+    override fun decorateRouteLine(expression: Expression)=
+        updateRouteLine(expression, RouteConstants.PRIMARY_ROUTE_TRAFFIC_LAYER_ID, style)
+
+    private fun drawAlternativeRoutes(routes: List<DirectionsRoute>) {
+        routes.mapNotNull {
+            generateRouteFeatureCollection(it).features()
+        }.flatten().let {
+            setRouteLineSource(RouteConstants.ALTERNATIVE_ROUTE_SOURCE_ID, style, FeatureCollection.fromFeatures(it))
+        }
     }
 
-    val routeShieldColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_routeShieldColor,
-            R.color.mapbox_navigation_route_shield_layer_color,
-            context,
-            styleRes
-        )
+    private fun drawPrimaryRoute(directionsRoute: DirectionsRoute) {
+        val featureCollection =  generateRouteFeatureCollection(directionsRoute)
+        setRouteLineSource(RouteConstants.PRIMARY_ROUTE_SOURCE_ID, style, featureCollection)
+        setRouteLineSource(RouteConstants.PRIMARY_ROUTE_TRAFFIC_SOURCE_ID, style, featureCollection)
+        hideRouteLineAtOffset(mapRouteLineState.vanishPointOffset)
+        hideShieldLineAtOffset(mapRouteLineState.vanishPointOffset)
+        hideTrafficLineAtOffset(mapRouteLineState.vanishPointOffset, directionsRoute)
     }
 
-    val routeScale: Float by lazy {
-        MapRouteLine.MapRouteLineSupport.getFloatStyledValue(
-            R.styleable.NavigationMapRoute_routeScale,
-            1.0f,
-            context,
-            styleRes
-        )
+    private fun reset() {
+        currentRouteLineState = MapRouteLineState(0f, listOf())
+        setRouteLineSource(RouteConstants.PRIMARY_ROUTE_SOURCE_ID, style, FeatureCollection.fromFeatures(arrayOf()))
+        setRouteLineSource(RouteConstants.PRIMARY_ROUTE_TRAFFIC_SOURCE_ID, style, FeatureCollection.fromFeatures(arrayOf()))
+        setRouteLineSource(RouteConstants.ALTERNATIVE_ROUTE_SOURCE_ID, style, FeatureCollection.fromFeatures(arrayOf()))
+        setRouteLineSource(RouteConstants.WAYPOINT_SOURCE_ID, style, FeatureCollection.fromFeatures(arrayOf()))
     }
 
-    val routeTrafficScale: Float by lazy {
-        MapRouteLine.MapRouteLineSupport.getFloatStyledValue(
-            R.styleable.NavigationMapRoute_routeTrafficScale,
-            1.0f,
-            context,
-            styleRes
-        )
-    }
+    //todo draw waypoints
+}
 
-    val roundedLineCap: Boolean by lazy {
-        MapRouteLine.MapRouteLineSupport.getBooleanStyledValue(
-            R.styleable.NavigationMapRoute_roundedLineCap,
-            true,
-            context,
-            styleRes
-        )
+object TrafficColorProviderFactory {
+    fun getTrafficColorProvider(
+        context: Context,
+        @androidx.annotation.StyleRes styleRes: Int
+    ): TrafficColorProvider {
+        return object : TrafficColorProvider {
+            override val routeLineTraveledColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_routeLineTraveledColor,
+                    R.color.mapbox_navigation_route_line_traveled_color,
+                    context,
+                    styleRes
+                )
+            override val routeLineShieldTraveledColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_routeLineShieldTraveledColor,
+                    R.color.mapbox_navigation_route_shield_line_traveled_color,
+                    context,
+                    styleRes
+                )
+            override val routeUnknownColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_routeUnknownCongestionColor,
+                    R.color.mapbox_navigation_route_layer_congestion_unknown,
+                    context,
+                    styleRes
+                )
+            override val routeDefaultColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_routeColor,
+                    R.color.mapbox_navigation_route_layer_blue,
+                    context,
+                    styleRes
+                )
+            override val routeLowCongestionColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_routeLowCongestionColor,
+                    R.color.mapbox_navigation_route_traffic_layer_color,
+                    context,
+                    styleRes
+                )
+            override val routeModerateColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_routeModerateCongestionColor,
+                    R.color.mapbox_navigation_route_layer_congestion_yellow,
+                    context,
+                    styleRes
+                )
+            override val routeHeavyColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_routeHeavyCongestionColor,
+                    R.color.mapbox_navigation_route_layer_congestion_heavy,
+                    context,
+                    styleRes
+                )
+            override val routeSevereColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_routeSevereCongestionColor,
+                    R.color.mapbox_navigation_route_layer_congestion_red,
+                    context,
+                    styleRes
+                )
+            override val routeShieldColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_routeShieldColor,
+                    R.color.mapbox_navigation_route_shield_layer_color,
+                    context,
+                    styleRes
+                )
+            override val routeScale: Float
+                get() = MapRouteLine.MapRouteLineSupport.getFloatStyledValue(
+                    R.styleable.NavigationMapRoute_routeScale,
+                    1.0f,
+                    context,
+                    styleRes
+                )
+            override val routeTrafficScale: Float
+                get() = MapRouteLine.MapRouteLineSupport.getFloatStyledValue(
+                    R.styleable.NavigationMapRoute_routeTrafficScale,
+                    1.0f,
+                    context,
+                    styleRes
+                )
+            override val roundedLineCap: Boolean
+                get() = MapRouteLine.MapRouteLineSupport.getBooleanStyledValue(
+                    R.styleable.NavigationMapRoute_roundedLineCap,
+                    true,
+                    context,
+                    styleRes
+                )
+            override val alternativeRouteUnknownColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_alternativeRouteLowCongestionColor,
+                    R.color.mapbox_navigation_route_alternative_color,
+                    context,
+                    styleRes
+                )
+            override val alternativeRouteDefaultColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_alternativeRouteLowCongestionColor,
+                    R.color.mapbox_navigation_route_alternative_color,
+                    context,
+                    styleRes
+                )
+            override val alternativeRouteLowColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_alternativeRouteLowCongestionColor,
+                    R.color.mapbox_navigation_route_alternative_color,
+                    context,
+                    styleRes
+                )
+            override val alternativeRouteModerateColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_alternativeRouteSevereCongestionColor,
+                    R.color.mapbox_navigation_route_alternative_congestion_red,
+                    context,
+                    styleRes
+                )
+            override val alternativeRouteHeavyColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_alternativeRouteHeavyCongestionColor,
+                    R.color.mapbox_navigation_route_alternative_congestion_heavy,
+                    context,
+                    styleRes
+                )
+            override val alternativeRouteSevereColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_alternativeRouteSevereCongestionColor,
+                    R.color.mapbox_navigation_route_alternative_congestion_red,
+                    context,
+                    styleRes
+                )
+            override val alternativeRouteShieldColor: Int
+                get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
+                    R.styleable.NavigationMapRoute_alternativeRouteShieldColor,
+                    R.color.mapbox_navigation_route_alternative_shield_color,
+                    context,
+                    styleRes
+                )
+            override val alternativeRouteScale: Float
+                get() = MapRouteLine.MapRouteLineSupport.getFloatStyledValue(
+                    R.styleable.NavigationMapRoute_alternativeRouteScale,
+                    1.0f,
+                    context,
+                    styleRes
+                )
+        }
     }
+}
 
-    val alternativeRouteUnknownColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_alternativeRouteUnknownCongestionColor,
-            R.color.mapbox_navigation_route_alternative_congestion_unknown,
-            context,
-            styleRes
-        )
-    }
-
-    val alternativeRouteDefaultColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_alternativeRouteColor,
-            R.color.mapbox_navigation_route_alternative_color,
-            context,
-            styleRes
-        )
-    }
-
-    val alternativeRouteLowColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_alternativeRouteLowCongestionColor,
-            R.color.mapbox_navigation_route_alternative_color,
-            context,
-            styleRes
-        )
-    }
-
-    val alternativeRouteModerateColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_alternativeRouteSevereCongestionColor,
-            R.color.mapbox_navigation_route_alternative_congestion_red,
-            context,
-            styleRes
-        )
-    }
-
-    val alternativeRouteHeavyColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_alternativeRouteHeavyCongestionColor,
-            R.color.mapbox_navigation_route_alternative_congestion_heavy,
-            context,
-            styleRes
-        )
-    }
-
-    val alternativeRouteSevereColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_alternativeRouteSevereCongestionColor,
-            R.color.mapbox_navigation_route_alternative_congestion_red,
-            context,
-            styleRes
-        )
-    }
-
-    val alternativeRouteShieldColor: Int by lazy {
-        MapRouteLine.MapRouteLineSupport.getStyledColor(
-            R.styleable.NavigationMapRoute_alternativeRouteShieldColor,
-            R.color.mapbox_navigation_route_alternative_shield_color,
-            context,
-            styleRes
-        )
-    }
-
-    val alternativeRouteScale: Float by lazy {
-        MapRouteLine.MapRouteLineSupport.getFloatStyledValue(
-            R.styleable.NavigationMapRoute_alternativeRouteScale,
-            1.0f,
-            context,
-            styleRes
-        )
-    }
+interface TrafficColorProvider {
+    val routeLineTraveledColor: Int
+    val routeLineShieldTraveledColor: Int
+    val routeUnknownColor: Int
+    val routeDefaultColor: Int
+    val routeLowCongestionColor: Int
+    val routeModerateColor: Int
+    val routeHeavyColor: Int
+    val routeSevereColor: Int
+    val routeShieldColor: Int
+    val routeScale: Float
+    val routeTrafficScale: Float
+    val roundedLineCap: Boolean
+    val alternativeRouteUnknownColor: Int
+    val alternativeRouteDefaultColor: Int
+    val alternativeRouteLowColor: Int
+    val alternativeRouteModerateColor: Int
+    val alternativeRouteHeavyColor: Int
+    val alternativeRouteSevereColor: Int
+    val alternativeRouteShieldColor: Int
+    val alternativeRouteScale: Float
 
     fun getRouteColorForCongestion(congestionValue: String, isPrimaryRoute: Boolean): Int {
         return when (isPrimaryRoute) {
@@ -336,4 +567,5 @@ class TrafficColorProvider(
         }
     }
 }
+
 
