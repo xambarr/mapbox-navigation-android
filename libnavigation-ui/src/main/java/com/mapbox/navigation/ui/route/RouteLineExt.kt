@@ -13,11 +13,12 @@ import com.mapbox.mapboxsdk.style.expressions.Expression
 import com.mapbox.mapboxsdk.style.layers.PropertyFactory
 import com.mapbox.mapboxsdk.style.sources.GeoJsonOptions
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource
-import com.mapbox.navigation.ui.internal.route.MapRouteLayerProvider
 import com.mapbox.navigation.ui.internal.route.MapRouteSourceProvider
 import com.mapbox.navigation.ui.internal.route.RouteConstants
-import com.mapbox.navigation.ui.route.RouteLineExt.calculateRouteLineSegmentsFromCongestion
+import com.mapbox.navigation.ui.internal.route.RouteLayerProvider
+import com.mapbox.navigation.ui.internal.utils.MapUtils
 import com.mapbox.navigation.ui.route.RouteLineExt.generateRouteFeatureCollection
+import com.mapbox.navigation.ui.route.RouteLineExt.generateWaypointsFeatureCollection
 import com.mapbox.navigation.ui.route.RouteLineExt.getExpressionAtOffset
 import com.mapbox.navigation.ui.route.RouteLineExt.getRouteLineSegments
 import com.mapbox.navigation.ui.route.RouteLineExt.getVanishRouteLineExpression
@@ -197,7 +198,7 @@ object RouteLineExt {
     fun getExpressionAtOffset(
         distanceOffset: Float,
         routeLineExpressionData: List<RouteLineExpressionData2>,
-        trafficColorProvider: TrafficColorProvider): Expression {
+        trafficColorProvider: RouteLineColorProvider): Expression {
         val filteredItems = routeLineExpressionData.filter { it.offset > distanceOffset }
         val trafficExpressions = when (filteredItems.isEmpty()) {
             true -> when (routeLineExpressionData.isEmpty()) {
@@ -267,12 +268,84 @@ object RouteLineExt {
 
     fun initializeLayers(
         style: Style,
-        layerProvider: MapRouteLayerProvider,
+        layerProvider: RouteLayerProvider,
         originIcon: Drawable,
         destinationIcon: Drawable,
-        belowLayerId: String
+        belowLayerId: String,
+        routeLineColorProvider: RouteLineColorProvider
     ) {
-        // todo, wait for updated layer provider to be merged in.
+        layerProvider.initializeAlternativeRouteShieldLayer(
+            style,
+            routeLineColorProvider.alternativeRouteScale,
+            routeLineColorProvider.alternativeRouteShieldColor
+        ).apply {
+            MapUtils.addLayerToMap(
+                style,
+                this,
+                belowLayerId
+            )
+        }
+
+        layerProvider.initializeAlternativeRouteLayer(
+            style,
+            routeLineColorProvider.roundedLineCap,
+            routeLineColorProvider.alternativeRouteScale,
+            routeLineColorProvider.alternativeRouteDefaultColor
+        ).apply {
+            MapUtils.addLayerToMap(
+                style,
+                this,
+                belowLayerId
+            )
+        }
+
+        layerProvider.initializePrimaryRouteShieldLayer(
+            style,
+            routeLineColorProvider.routeScale,
+            routeLineColorProvider.routeShieldColor
+        ).apply {
+            MapUtils.addLayerToMap(
+                style,
+                this,
+                belowLayerId
+            )
+        }
+
+        layerProvider.initializePrimaryRouteLayer(
+            style,
+            routeLineColorProvider.roundedLineCap,
+            routeLineColorProvider.routeScale,
+            routeLineColorProvider.routeDefaultColor
+        ).apply {
+            MapUtils.addLayerToMap(
+                style,
+                this,
+                belowLayerId
+            )
+        }
+
+        layerProvider.initializePrimaryRouteTrafficLayer(
+            style,
+            routeLineColorProvider.roundedLineCap,
+            routeLineColorProvider.routeTrafficScale,
+            routeLineColorProvider.routeDefaultColor
+        ).apply {
+            MapUtils.addLayerToMap(
+                style,
+                this,
+                belowLayerId
+            )
+        }
+
+        layerProvider.initializeWayPointLayer(
+            style, originIcon, destinationIcon
+        ).apply {
+            MapUtils.addLayerToMap(
+                style,
+                this,
+                belowLayerId
+            )
+        }
     }
 
     fun getVanishRouteLineExpression(offset: Float, traveledColor: Int, defaultColor: Int): Expression {
@@ -303,7 +376,7 @@ interface MapRouteLineAPI {
 class MapRouteLine2(
     private val mapRouteLineState: MapRouteLineState = MapRouteLineState(),
     private val style: Style,
-    private val trafficColorProvider: TrafficColorProvider
+    private val trafficColorProvider: RouteLineColorProvider
     ): MapRouteLineAPI {
 
     private var currentRouteLineState = mapRouteLineState
@@ -373,15 +446,18 @@ class MapRouteLine2(
         setRouteLineSource(RouteConstants.WAYPOINT_SOURCE_ID, style, FeatureCollection.fromFeatures(arrayOf()))
     }
 
-    //todo draw waypoints
+    internal fun drawWayPoints(directionsRoute: DirectionsRoute) {
+        val featureCollection = generateWaypointsFeatureCollection(directionsRoute)
+        setRouteLineSource(RouteConstants.WAYPOINT_SOURCE_ID, style, featureCollection)
+    }
 }
 
-object TrafficColorProviderFactory {
-    fun getTrafficColorProvider(
+object RouteLineColorProviderFactory {
+    fun getRouteLineColorProvider(
         context: Context,
         @androidx.annotation.StyleRes styleRes: Int
-    ): TrafficColorProvider {
-        return object : TrafficColorProvider {
+    ): RouteLineColorProvider {
+        return object : RouteLineColorProvider {
             override val routeLineTraveledColor: Int
                 get() = MapRouteLine.MapRouteLineSupport.getStyledColor(
                     R.styleable.NavigationMapRoute_routeLineTraveledColor,
@@ -526,7 +602,7 @@ object TrafficColorProviderFactory {
     }
 }
 
-interface TrafficColorProvider {
+interface RouteLineColorProvider {
     val routeLineTraveledColor: Int
     val routeLineShieldTraveledColor: Int
     val routeUnknownColor: Int
