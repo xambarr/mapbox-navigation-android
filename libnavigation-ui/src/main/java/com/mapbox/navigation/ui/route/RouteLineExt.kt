@@ -7,6 +7,7 @@ import com.mapbox.core.constants.Constants
 import com.mapbox.geojson.Feature
 import com.mapbox.geojson.FeatureCollection
 import com.mapbox.geojson.LineString
+import com.mapbox.geojson.Point
 import com.mapbox.libnavigation.ui.R
 import com.mapbox.mapboxsdk.maps.Style
 import com.mapbox.mapboxsdk.style.expressions.Expression
@@ -25,6 +26,7 @@ import com.mapbox.navigation.ui.route.RouteLineExt.getRouteLineSegments
 import com.mapbox.navigation.ui.route.RouteLineExt.getVanishRouteLineExpression
 import com.mapbox.navigation.ui.route.RouteLineExt.setRouteLineSource
 import com.mapbox.navigation.ui.route.RouteLineExt.updateRouteLine
+import com.mapbox.turf.TurfConstants
 import com.mapbox.turf.TurfMeasurement
 import java.math.BigDecimal
 
@@ -603,4 +605,39 @@ interface RouteLineColorProvider {
     }
 }
 
+/**
+ * Takes a line and a point and returns the point's distance from the beginning of the line.
+ */
+fun findDistanceOfPointAlongLine(line: LineString, point: Point): Double {
+    val linePoints = line.coordinates()
+    val runningTotalDistance = mutableListOf<Double>()
+    var distanceToReturn = 0.0
+    for(index in 0 until linePoints.size) {
+        when (index == 0) {
+            true -> 0.0
+            false -> TurfMeasurement.distance(linePoints[index - 1], linePoints[index], TurfConstants.UNIT_METERS)
+        }.also {
+            runningTotalDistance.add(it)
+        }
 
+        val distanceToPoint = TurfMeasurement.distance(linePoints[index], point, TurfConstants.UNIT_METERS)
+        val distanceToNextIndex = if ((index + 1) < linePoints.size) {
+            TurfMeasurement.distance(
+                linePoints[index],
+                linePoints[index + 1],
+                TurfConstants.UNIT_METERS
+            )
+        }
+        else {
+            distanceToPoint
+        }
+
+        if (distanceToPoint > distanceToNextIndex) {
+            continue
+        } else {
+            distanceToReturn = runningTotalDistance.sum() + distanceToPoint
+            break
+        }
+    }
+    return distanceToReturn
+}
