@@ -6,6 +6,7 @@ import android.annotation.SuppressLint;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.os.CountDownTimer;
 import android.view.LayoutInflater;
@@ -34,7 +35,9 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment;
 import com.mapbox.navigation.ui.R;
 import com.mapbox.navigation.core.telemetry.events.FeedbackEvent;
 
+import com.mapbox.navigation.ui.internal.utils.ViewUtils;
 import org.jetbrains.annotations.NotNull;
+import timber.log.Timber;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -42,6 +45,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * A BottomSheetDialogFragment shows Feedback UI with different feedback categories.
@@ -57,22 +61,20 @@ public class FeedbackBottomSheet extends BottomSheetDialogFragment implements An
   private static final String EMPTY_FEEDBACK_DESCRIPTION = "";
   private static final long CLOSE_BOTTOM_SHEET_AFTER = 150L;
   private static final long TIMER_INTERVAL = 1L;
-  private static final int GRID_SPAN_GUIDANCE_LAYOUT = 3;
-  private static final int GRID_SPAN_NAVIGATION_LAYOUT = 3;
+  private static final int GRID_SPAN_PORTRAIT = 3;
+  private static final int GRID_SPAN_LANDSCAPE = 6;
 
   @Nullable
   private FeedbackBottomSheetListener feedbackBottomSheetListener;
   private TextView feedbackBottomSheetTitleText;
   private ImageButton cancelBtn;
   private LinearLayout feedbackMainLayout;
-  private RecyclerView guidanceIssueItems;
-  private FeedbackAdapter guidanceIssueAdapter;
-  private RecyclerView navigationIssueItems;
-  private FeedbackAdapter notificationIssueAdapter;
+  private RecyclerView feedbackCategories;
+  private FeedbackAdapter feedbackCategoryAdapter;
   private RelativeLayout feedbackSubTypesLayout;
   @Nullable
   private FeedbackSubTypeAdapter feedbackSubTypeAdapter;
-  private RecyclerView feedbackSubTypeItems;
+  private RecyclerView feedbackSubTypes;
   private ProgressBar feedbackProgressBar;
   private ObjectAnimator countdownAnimation;
   private AppCompatButton reportIssueBtn;
@@ -82,7 +84,7 @@ public class FeedbackBottomSheet extends BottomSheetDialogFragment implements An
   private CountDownTimer timer = null;
   private FeedbackItem selectedFeedbackItem;
   private Map<String, List<FeedbackSubTypeItem>> feedbackSubTypeMap;
-  private Class<? extends FeedbackBottomSheetListener> listenerClass;
+  private Class<? extends FeedbackBottomSheetListener> feedbackBottomSheetListenerClass;
   @Nullable
   private DismissCommand dismissCommand = null;
 
@@ -93,7 +95,7 @@ public class FeedbackBottomSheet extends BottomSheetDialogFragment implements An
   }
 
   @NonNull
-  public static FeedbackBottomSheet newInstance(FeedbackBottomSheetListener feedbackBottomSheetListener,
+  private static FeedbackBottomSheet newInstance(FeedbackBottomSheetListener feedbackBottomSheetListener,
                                                 @FeedbackFlowType int flowType, long duration) {
     FeedbackBottomSheet feedbackBottomSheet = new FeedbackBottomSheet();
     feedbackBottomSheet.feedbackFlowType = flowType;
@@ -121,22 +123,20 @@ public class FeedbackBottomSheet extends BottomSheetDialogFragment implements An
     initTitleTextView();
     initButtons();
     initFeedbackRecyclerView();
+    initCountDownAnimation();
   }
 
   @NonNull
   @Override
   public Dialog onCreateDialog(Bundle savedInstanceState) {
     BottomSheetDialog dialog = (BottomSheetDialog) super.onCreateDialog(savedInstanceState);
-    dialog.setOnShowListener(new DialogInterface.OnShowListener() {
-      @Override
-      public void onShow(DialogInterface dialog) {
-        BottomSheetDialog bottomSheetDialog = (BottomSheetDialog) dialog;
-        FrameLayout bottomSheet = bottomSheetDialog.findViewById(com.google.android.material.R.id.design_bottom_sheet);
-        if (bottomSheet != null) {
-          BottomSheetBehavior<FrameLayout> behavior = BottomSheetBehavior.from(bottomSheet);
-          behavior.setState(BottomSheetBehavior.STATE_EXPANDED);
-          behavior.setSkipCollapsed(true);
-        }
+    dialog.setOnShowListener(dialog1 -> {
+      BottomSheetDialog bottomSheetDialog = (BottomSheetDialog) dialog1;
+      FrameLayout bottomSheet = bottomSheetDialog.findViewById(com.google.android.material.R.id.design_bottom_sheet);
+      if (bottomSheet != null) {
+        BottomSheetBehavior<FrameLayout> behavior = BottomSheetBehavior.from(bottomSheet);
+        behavior.setState(BottomSheetBehavior.STATE_EXPANDED);
+        behavior.setSkipCollapsed(true);
       }
     });
     return dialog;
@@ -162,7 +162,7 @@ public class FeedbackBottomSheet extends BottomSheetDialogFragment implements An
   public void onSaveInstanceState(@NonNull Bundle outState) {
     super.onSaveInstanceState(outState);
     if (feedbackBottomSheetListener != null) {
-      listenerClass = feedbackBottomSheetListener.getClass();
+      feedbackBottomSheetListenerClass = feedbackBottomSheetListener.getClass();
     }
   }
 
@@ -178,9 +178,17 @@ public class FeedbackBottomSheet extends BottomSheetDialogFragment implements An
   @Override
   public void onAnimationEnd(Animator animation) {
     if (FeedbackBottomSheet.this.isResumed()) {
-      FeedbackBottomSheet.this.dismiss();
+      FeedbackBottomSheet.this.dismissWithoutSelection();
     } else {
       dismissCommand = delayedDismissCommand;
+    }
+  }
+
+  @Override
+  public void onCancel(@NonNull DialogInterface dialog) {
+    super.onCancel(dialog);
+    if (feedbackBottomSheetListener != null) {
+      feedbackBottomSheetListener.onFeedbackSelected(null);
     }
   }
 
@@ -204,7 +212,7 @@ public class FeedbackBottomSheet extends BottomSheetDialogFragment implements An
   //endregion
 
   public void setFeedbackBottomSheetListener(FeedbackBottomSheetListener feedbackBottomSheetListener) {
-    if (listenerClass == null || listenerClass.isInstance(feedbackBottomSheetListener)) {
+    if (feedbackBottomSheetListenerClass == null || feedbackBottomSheetListenerClass.isInstance(feedbackBottomSheetListener)) {
       this.feedbackBottomSheetListener = feedbackBottomSheetListener;
     }
   }
@@ -219,13 +227,13 @@ public class FeedbackBottomSheet extends BottomSheetDialogFragment implements An
   private void bind(@NonNull View bottomSheetView) {
     feedbackBottomSheetTitleText = bottomSheetView.findViewById(R.id.feedbackBottomSheetTitleText);
     cancelBtn = bottomSheetView.findViewById(R.id.cancelBtn);
+    cancelBtn.setColorFilter(Color.WHITE);
 
     feedbackMainLayout = bottomSheetView.findViewById(R.id.feedbackMainLayout);
-    guidanceIssueItems = bottomSheetView.findViewById(R.id.guidanceIssueItems);
-    navigationIssueItems = bottomSheetView.findViewById(R.id.navigationIssueItems);
+    feedbackCategories = bottomSheetView.findViewById(R.id.feedbackCategories);
 
     feedbackSubTypesLayout = bottomSheetView.findViewById(R.id.feedbackSubTypesLayout);
-    feedbackSubTypeItems = bottomSheetView.findViewById(R.id.feedbackSubTypeItems);
+    feedbackSubTypes = bottomSheetView.findViewById(R.id.feedbackSubTypes);
     feedbackProgressBar = bottomSheetView.findViewById(R.id.feedbackProgress);
 
     reportIssueBtn = bottomSheetView.findViewById(R.id.reportIssueBtn);
@@ -236,7 +244,7 @@ public class FeedbackBottomSheet extends BottomSheetDialogFragment implements An
   }
 
   private void initButtons() {
-    cancelBtn.setOnClickListener(view -> dismiss());
+    cancelBtn.setOnClickListener(view -> dismissWithoutSelection());
 
     reportIssueBtn.setOnClickListener(view -> {
       if (feedbackBottomSheetListener != null) {
@@ -249,17 +257,15 @@ public class FeedbackBottomSheet extends BottomSheetDialogFragment implements An
   private void initFeedbackRecyclerView() {
     final Context context = getContext();
 
-    guidanceIssueAdapter = new FeedbackAdapter(buildGuidanceIssueList());
-    guidanceIssueItems.setAdapter(guidanceIssueAdapter);
-    guidanceIssueItems.setOverScrollMode(RecyclerView.OVER_SCROLL_IF_CONTENT_SCROLLS);
-    guidanceIssueItems.addOnItemTouchListener(new FeedbackClickListener(context, guidanceIssueClickCallback));
-    guidanceIssueItems.setLayoutManager(new GridLayoutManager(context, GRID_SPAN_GUIDANCE_LAYOUT));
-
-    notificationIssueAdapter = new FeedbackAdapter(buildNavigationIssueList());
-    navigationIssueItems.setAdapter(notificationIssueAdapter);
-    navigationIssueItems.setOverScrollMode(RecyclerView.OVER_SCROLL_IF_CONTENT_SCROLLS);
-    navigationIssueItems.addOnItemTouchListener(new FeedbackClickListener(context, navigationIssueClickCallback));
-    navigationIssueItems.setLayoutManager(new GridLayoutManager(context, GRID_SPAN_NAVIGATION_LAYOUT));
+    feedbackCategoryAdapter = new FeedbackAdapter(buildFeedbackCategoryList());
+    feedbackCategories.setAdapter(feedbackCategoryAdapter);
+    feedbackCategories.setOverScrollMode(RecyclerView.OVER_SCROLL_IF_CONTENT_SCROLLS);
+    feedbackCategories.addOnItemTouchListener(new FeedbackClickListener(context, feedbackClickListener));
+    if (ViewUtils.isLandscape(context)) {
+      feedbackCategories.setLayoutManager(new GridLayoutManager(context, GRID_SPAN_LANDSCAPE));
+    } else {
+      feedbackCategories.setLayoutManager(new GridLayoutManager(context, GRID_SPAN_PORTRAIT));
+    }
   }
 
   private void initCountDownAnimation() {
@@ -307,68 +313,84 @@ public class FeedbackBottomSheet extends BottomSheetDialogFragment implements An
     timer.start();
   }
 
-  @NonNull
-  @SuppressLint("WrongConstant")
-  private List<FeedbackItem> buildGuidanceIssueList() {
-    List<FeedbackItem> list = new ArrayList<>();
-
-    list.add(new FeedbackItem(getResources().getString(R.string.mapbox_feedback_type_looks_incorrect),
-      R.drawable.mapbox_ic_feedback_looks_incorrect,
-      FeedbackEvent.INCORRECT_VISUAL_GUIDANCE,
-      EMPTY_FEEDBACK_DESCRIPTION));
-    list.add(new FeedbackItem(getResources().getString(R.string.mapbox_feedback_type_confusing_audio),
-      R.drawable.mapbox_ic_feedback_confusing_audio,
-      FeedbackEvent.INCORRECT_AUDIO_GUIDANCE,
-      EMPTY_FEEDBACK_DESCRIPTION));
-    list.add(new FeedbackItem(getResources().getString(R.string.mapbox_feedback_type_positioning_issue),
-        R.drawable.mapbox_ic_feedback_positioning_issue,
-        FeedbackEvent.POSITIONING_ISSUE,
-        EMPTY_FEEDBACK_DESCRIPTION));
-
-    return list;
-  }
-
-  @NonNull
-  private FeedbackClickListener.ClickCallback guidanceIssueClickCallback = new FeedbackClickListener.ClickCallback() {
-    @Override
-    public void onFeedbackItemClick(@Nullable ImageView view, int feedbackPosition) {
-      if (view != null) {
-        view.setPressed(!view.isPressed());
-      }
-      FeedbackItem feedbackItem = guidanceIssueAdapter.getFeedbackItem(feedbackPosition);
-      onFeedbackSelected(feedbackItem);
+  private void dismissWithoutSelection() {
+    if (feedbackBottomSheetListener != null) {
+      feedbackBottomSheetListener.onFeedbackSelected(null);
     }
-  };
+    dismiss();
+  }
 
   @NonNull
   @SuppressLint("WrongConstant")
-  private List<FeedbackItem> buildNavigationIssueList() {
+  private List<FeedbackItem> buildFeedbackCategoryList() {
     List<FeedbackItem> list = new ArrayList<>();
 
-    list.add(new FeedbackItem(getResources().getString(R.string.mapbox_feedback_type_route_quality),
-      R.drawable.mapbox_ic_feedback_route_quality,
-      FeedbackEvent.ROUTING_ERROR,
-      EMPTY_FEEDBACK_DESCRIPTION));
-    list.add(new FeedbackItem(getResources().getString(R.string.mapbox_feedback_type_illegal_route),
-      R.drawable.mapbox_ic_feedback_illegal_route,
-      FeedbackEvent.NOT_ALLOWED,
-      EMPTY_FEEDBACK_DESCRIPTION));
-    list.add(new FeedbackItem(getResources().getString(R.string.mapbox_feedback_type_road_closure),
-      R.drawable.mapbox_ic_feedback_road_closure,
-      FeedbackEvent.ROAD_CLOSED,
-      EMPTY_FEEDBACK_DESCRIPTION));
+    list.add(new FeedbackItem(
+            FeedbackHelper.INSTANCE.getFeedbackText(
+                    FeedbackEvent.INCORRECT_VISUAL_GUIDANCE,
+                    Objects.requireNonNull(getContext())
+            ),
+            FeedbackHelper.INSTANCE.getFeedbackImage(FeedbackEvent.INCORRECT_VISUAL_GUIDANCE),
+            FeedbackEvent.INCORRECT_VISUAL_GUIDANCE,
+            EMPTY_FEEDBACK_DESCRIPTION)
+    );
+    list.add(new FeedbackItem(
+            FeedbackHelper.INSTANCE.getFeedbackText(
+                    FeedbackEvent.INCORRECT_AUDIO_GUIDANCE,
+                    Objects.requireNonNull(getContext())
+            ),
+            FeedbackHelper.INSTANCE.getFeedbackImage(FeedbackEvent.INCORRECT_AUDIO_GUIDANCE),
+            FeedbackEvent.INCORRECT_AUDIO_GUIDANCE,
+            EMPTY_FEEDBACK_DESCRIPTION)
+    );
+    list.add(new FeedbackItem(
+            FeedbackHelper.INSTANCE.getFeedbackText(
+                    FeedbackEvent.POSITIONING_ISSUE,
+                    Objects.requireNonNull(getContext())
+            ),
+            FeedbackHelper.INSTANCE.getFeedbackImage(FeedbackEvent.POSITIONING_ISSUE),
+            FeedbackEvent.POSITIONING_ISSUE,
+            EMPTY_FEEDBACK_DESCRIPTION)
+    );
+    list.add(new FeedbackItem(
+            FeedbackHelper.INSTANCE.getFeedbackText(
+                    FeedbackEvent.ROUTING_ERROR,
+                    Objects.requireNonNull(getContext())
+            ),
+            FeedbackHelper.INSTANCE.getFeedbackImage(FeedbackEvent.ROUTING_ERROR),
+            FeedbackEvent.ROUTING_ERROR,
+            EMPTY_FEEDBACK_DESCRIPTION)
+    );
+    list.add(new FeedbackItem(
+            FeedbackHelper.INSTANCE.getFeedbackText(
+                    FeedbackEvent.NOT_ALLOWED,
+                    Objects.requireNonNull(getContext())
+            ),
+            FeedbackHelper.INSTANCE.getFeedbackImage(FeedbackEvent.NOT_ALLOWED),
+            FeedbackEvent.NOT_ALLOWED,
+            EMPTY_FEEDBACK_DESCRIPTION)
+    );
+    list.add(new FeedbackItem(
+            FeedbackHelper.INSTANCE.getFeedbackText(
+                    FeedbackEvent.ROAD_CLOSED,
+                    Objects.requireNonNull(getContext())
+            ),
+            FeedbackHelper.INSTANCE.getFeedbackImage(FeedbackEvent.ROAD_CLOSED),
+            FeedbackEvent.ROAD_CLOSED,
+            EMPTY_FEEDBACK_DESCRIPTION)
+    );
 
     return list;
   }
 
   @NonNull
-  private FeedbackClickListener.ClickCallback navigationIssueClickCallback = new FeedbackClickListener.ClickCallback() {
+  private FeedbackClickListener.ClickCallback feedbackClickListener = new FeedbackClickListener.ClickCallback() {
     @Override
     public void onFeedbackItemClick(@Nullable ImageView view, int feedbackPosition) {
       if (view != null) {
         view.setPressed(!view.isPressed());
       }
-      FeedbackItem feedbackItem = notificationIssueAdapter.getFeedbackItem(feedbackPosition);
+      FeedbackItem feedbackItem = feedbackCategoryAdapter.getFeedbackItem(feedbackPosition);
       onFeedbackSelected(feedbackItem);
     }
   };
@@ -381,27 +403,28 @@ public class FeedbackBottomSheet extends BottomSheetDialogFragment implements An
       }
       startTimer();
     } else {
+      cancelCountdownAnimation();
       launchDetailFlow(feedbackItem);
     }
   }
 
   private void launchDetailFlow(@NonNull FeedbackItem feedbackItem) {
-    initCountDownAnimation();
     feedbackSubTypeMap = buildFeedbackSubTypeMap();
     selectedFeedbackItem = feedbackItem;
 
     feedbackBottomSheetTitleText.setText(feedbackItem.getFeedbackText().replace('\n', ' '));
     initFeedbackIssueDetailRecyclerView(feedbackItem);
+    feedbackProgressBar.setVisibility(View.GONE);
     feedbackMainLayout.setVisibility(View.GONE);
     feedbackSubTypesLayout.setVisibility(View.VISIBLE);
   }
 
   private void initFeedbackIssueDetailRecyclerView(@NonNull FeedbackItem feedbackItem) {
-    feedbackSubTypeAdapter = new FeedbackSubTypeAdapter(
-      feedbackSubTypeMap.get(feedbackItem.getFeedbackType()), descriptionItemClickListener);
-    feedbackSubTypeItems.setAdapter(feedbackSubTypeAdapter);
-    feedbackSubTypeItems.setOverScrollMode(RecyclerView.OVER_SCROLL_ALWAYS);
-    feedbackSubTypeItems.setLayoutManager(new LinearLayoutManager(this.getContext()));
+    feedbackSubTypeAdapter = new FeedbackSubTypeAdapter(descriptionItemClickListener);
+    feedbackSubTypeAdapter.submitList(feedbackSubTypeMap.get(feedbackItem.getFeedbackType()));
+    feedbackSubTypes.setAdapter(feedbackSubTypeAdapter);
+    feedbackSubTypes.setOverScrollMode(RecyclerView.OVER_SCROLL_ALWAYS);
+    feedbackSubTypes.setLayoutManager(new LinearLayoutManager(this.getContext()));
   }
 
   @NonNull
@@ -548,12 +571,38 @@ public class FeedbackBottomSheet extends BottomSheetDialogFragment implements An
   public @interface FeedbackFlowType {
   }
 
+  /**
+   * FEEDBACK_MAIN_FLOW limits the feedback process during
+   * turn-by-turn navigation to only one section. This section
+   * provides a way for a user to select the {@link FeedbackItem}'s
+   * high-level feedback type. A second section that asks for more detailed
+   * information within the selected type, will NOT be shown if
+   * FEEDBACK_MAIN_FLOW is used.
+   */
   public static final int FEEDBACK_MAIN_FLOW = 0;
+
+  /**
+   * FEEDBACK_MAIN_FLOW limits the feedback process during
+   * turn-by-turn navigation to only one section. This section
+   * provides a way for a user to select the {@link FeedbackItem}'s
+   * high-level feedback type. A second section that asks for more detailed
+   * information within the selected type, WILL be shown if
+   * FEEDBACK_DETAIL_FLOW is used.
+   */
   public static final int FEEDBACK_DETAIL_FLOW = 1;
+
+  @IntDef( {FEEDBACK_FLOW_IDLE, FEEDBACK_FLOW_SENT, FEEDBACK_FLOW_CANCEL})
+  @Retention(RetentionPolicy.SOURCE)
+  public @interface FeedbackFlowStatus {
+  }
+
+  public static final int FEEDBACK_FLOW_IDLE = -1;
+  public static final int FEEDBACK_FLOW_SENT = 0;
+  public static final int FEEDBACK_FLOW_CANCEL = 2;
 
   private interface DismissCommand {
     void invoke();
   }
 
-  private DismissCommand delayedDismissCommand = FeedbackBottomSheet.this::dismiss;
+  private DismissCommand delayedDismissCommand = FeedbackBottomSheet.this::dismissWithoutSelection;
 }
