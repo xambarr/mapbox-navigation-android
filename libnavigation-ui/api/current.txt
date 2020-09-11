@@ -485,6 +485,7 @@ package com.mapbox.navigation.ui.map {
     method public void startCamera(com.mapbox.api.directions.v5.models.DirectionsRoute);
     method public void takeScreenshot(com.mapbox.mapboxsdk.maps.MapboxMap.SnapshotReadyCallback);
     method public void updateCameraTrackingMode(@com.mapbox.navigation.ui.camera.NavigationCamera.TrackingMode int);
+    method public void updateClickDistancePadding(int);
     method public void updateIncidentsVisibility(boolean);
     method public void updateLocation(android.location.Location?);
     method public void updateLocation(android.location.Location?, Long?);
@@ -507,6 +508,7 @@ package com.mapbox.navigation.ui.map {
     method public com.mapbox.navigation.ui.map.NavigationMapboxMap.Builder! useSpecializedLocationLayer(boolean);
     method public com.mapbox.navigation.ui.map.NavigationMapboxMap.Builder! vanishRouteLineEnabled(boolean);
     method public com.mapbox.navigation.ui.map.NavigationMapboxMap.Builder! vanishingRouteLineUpdateIntervalNano(long);
+    method public com.mapbox.navigation.ui.map.NavigationMapboxMap.Builder! withRouteClickPadding(int);
   }
 
   public interface OnWayNameChangedListener {
@@ -605,14 +607,17 @@ package com.mapbox.navigation.ui.route {
     method public void setOnRouteSelectionChangeListener(com.mapbox.navigation.ui.route.OnRouteSelectionChangeListener?);
     method public void setVanishRouteLineEnabled(boolean);
     method public void showAlternativeRoutes(boolean);
+    method public void updateClickDistancePadding(int);
     method public void updateRouteArrowVisibilityTo(boolean);
     method public void updateRouteVisibilityTo(boolean);
+    field protected final com.mapbox.mapboxsdk.maps.MapboxMap.OnMapClickListener! mapClickListener;
   }
 
   public static class NavigationMapRoute.Builder {
     ctor public NavigationMapRoute.Builder(com.mapbox.mapboxsdk.maps.MapView, com.mapbox.mapboxsdk.maps.MapboxMap, androidx.lifecycle.LifecycleOwner);
     method public com.mapbox.navigation.ui.route.NavigationMapRoute build();
     method public com.mapbox.navigation.ui.route.NavigationMapRoute.Builder withBelowLayer(String?);
+    method public com.mapbox.navigation.ui.route.NavigationMapRoute.Builder withCustomRouteClickPadding(int);
     method public com.mapbox.navigation.ui.route.NavigationMapRoute.Builder withMapboxNavigation(com.mapbox.navigation.core.MapboxNavigation?);
     method public com.mapbox.navigation.ui.route.NavigationMapRoute.Builder withRouteLineInitializedCallback(com.mapbox.navigation.ui.route.MapRouteLineInitializedCallback?);
     method public com.mapbox.navigation.ui.route.NavigationMapRoute.Builder withRouteStyleDescriptors(java.util.List<com.mapbox.navigation.ui.route.RouteStyleDescriptor!>!);
