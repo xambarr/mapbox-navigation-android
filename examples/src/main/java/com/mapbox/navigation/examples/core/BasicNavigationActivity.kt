@@ -17,17 +17,20 @@ import com.mapbox.api.directions.v5.models.DirectionsRoute
 import com.mapbox.api.directions.v5.models.RouteOptions
 import com.mapbox.mapboxsdk.camera.CameraUpdateFactory
 import com.mapbox.mapboxsdk.location.modes.RenderMode
+import com.mapbox.mapboxsdk.maps.MapView
 import com.mapbox.mapboxsdk.maps.MapboxMap
 import com.mapbox.mapboxsdk.maps.OnMapReadyCallback
 import com.mapbox.mapboxsdk.maps.Style
 import com.mapbox.navigation.base.internal.extensions.applyDefaultParams
 import com.mapbox.navigation.base.internal.extensions.coordinates
 import com.mapbox.navigation.base.trip.model.RouteProgress
+import com.mapbox.navigation.base.trip.model.alert.RouteAlert
 import com.mapbox.navigation.core.MapboxNavigation
 import com.mapbox.navigation.core.directions.session.RoutesRequestCallback
 import com.mapbox.navigation.core.replay.MapboxReplayer
 import com.mapbox.navigation.core.replay.ReplayLocationEngine
 import com.mapbox.navigation.core.replay.route.ReplayProgressObserver
+import com.mapbox.navigation.core.trip.session.RouteAlertsObserver
 import com.mapbox.navigation.core.trip.session.RouteProgressObserver
 import com.mapbox.navigation.core.trip.session.TripSessionState
 import com.mapbox.navigation.core.trip.session.TripSessionStateObserver
@@ -38,6 +41,8 @@ import com.mapbox.navigation.examples.utils.Utils.getRouteFromBundle
 import com.mapbox.navigation.examples.utils.extensions.toPoint
 import com.mapbox.navigation.ui.camera.NavigationCamera
 import com.mapbox.navigation.ui.map.NavigationMapboxMap
+import com.mapbox.navigation.ui.routealert.MapboxRouteAlertsDisplayOptions
+import com.mapbox.navigation.ui.routealert.MapboxRouteAlertsDisplayer
 import kotlinx.android.synthetic.main.activity_basic_navigation_layout.*
 import timber.log.Timber
 import java.lang.ref.WeakReference
@@ -47,7 +52,9 @@ import java.lang.ref.WeakReference
  * navigation experience with the Navigation SDK and
  * Navigation UI SDK.
  */
-open class BasicNavigationActivity : AppCompatActivity(), OnMapReadyCallback {
+@SuppressLint("MissingPermission")
+open class BasicNavigationActivity :
+    AppCompatActivity(), OnMapReadyCallback, MapView.OnDidFinishLoadingStyleListener {
 
     companion object {
         const val DEFAULT_INTERVAL_IN_MILLISECONDS = 1000L
@@ -59,6 +66,7 @@ open class BasicNavigationActivity : AppCompatActivity(), OnMapReadyCallback {
     private var mapInstanceState: Bundle? = null
     private val mapboxReplayer = MapboxReplayer()
     private var directionRoute: DirectionsRoute? = null
+    private lateinit var mapboxRouteAlertsDisplayer: MapboxRouteAlertsDisplayer
 
     private val mapStyles = listOf(
         Style.MAPBOX_STREETS,
@@ -74,6 +82,7 @@ open class BasicNavigationActivity : AppCompatActivity(), OnMapReadyCallback {
         setContentView(R.layout.activity_basic_navigation_layout)
         mapView.onCreate(savedInstanceState)
         mapView.getMapAsync(this)
+        mapView.addOnDidFinishLoadingStyleListener(this)
 
         val mapboxNavigationOptions = MapboxNavigation
             .defaultNavigationOptionsBuilder(this, Utils.getMapboxAccessToken(this))
@@ -83,6 +92,15 @@ open class BasicNavigationActivity : AppCompatActivity(), OnMapReadyCallback {
         mapboxNavigation = MapboxNavigation(mapboxNavigationOptions).apply {
             registerTripSessionStateObserver(tripSessionStateObserver)
             registerRouteProgressObserver(routeProgressObserver)
+            registerRouteAlertsObserver(
+                object : RouteAlertsObserver {
+                    override fun onNewRouteAlerts(routeAlerts: List<RouteAlert>) {
+                        if (::mapboxRouteAlertsDisplayer.isInitialized) {
+                            mapboxRouteAlertsDisplayer.onNewRouteAlerts(routeAlerts)
+                        }
+                    }
+                }
+            )
         }
 
         initListeners()
@@ -255,6 +273,20 @@ open class BasicNavigationActivity : AppCompatActivity(), OnMapReadyCallback {
         super.onRestoreInstanceState(savedInstanceState)
         mapInstanceState = savedInstanceState
         directionRoute = getRouteFromBundle(savedInstanceState)
+    }
+
+    override fun onDidFinishLoadingStyle() {
+        navigationMapboxMap?.retrieveMap()?.style?.let {
+            if (::mapboxRouteAlertsDisplayer.isInitialized) {
+                mapboxRouteAlertsDisplayer.onStyleLoaded(it)
+            } else {
+                mapboxRouteAlertsDisplayer = MapboxRouteAlertsDisplayer(
+                    MapboxRouteAlertsDisplayOptions.Builder(this, it)
+                        .showToll(true)
+                        .build()
+                )
+            }
+        }
     }
 
     private val locationListenerCallback = MyLocationEngineCallback(this)

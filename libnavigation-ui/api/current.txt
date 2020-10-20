@@ -60,6 +60,7 @@ package com.mapbox.navigation.ui {
     method public void onPause();
     method public void onRestoreInstanceState(android.os.Bundle);
     method public void onResume();
+    method public void onRouteAlertsUpdated(java.util.List<com.mapbox.navigation.base.trip.model.alert.RouteAlert!>!);
     method public void onSaveInstanceState(android.os.Bundle);
     method public void onStart();
     method public void onStop();
@@ -645,6 +646,71 @@ package com.mapbox.navigation.ui.route {
     method public int getLineColorResourceId();
     method public int getLineShieldColorResourceId();
     method public String getRouteIdentifier();
+  }
+
+}
+
+package com.mapbox.navigation.ui.routealert {
+
+  public final class MapboxRouteAlertsDisplayOptions {
+    method public android.content.Context getContext();
+    method public boolean getShowToll();
+    method public com.mapbox.mapboxsdk.maps.Style getStyle();
+    method public com.mapbox.navigation.ui.routealert.MapboxRouteAlertsDisplayOptions.Builder toBuilder();
+  }
+
+  public static final class MapboxRouteAlertsDisplayOptions.Builder {
+    ctor public MapboxRouteAlertsDisplayOptions.Builder(android.content.Context context, com.mapbox.mapboxsdk.maps.Style style);
+    method public com.mapbox.navigation.ui.routealert.MapboxRouteAlertsDisplayOptions build();
+    method public com.mapbox.navigation.ui.routealert.MapboxRouteAlertsDisplayOptions.Builder showToll(boolean showToll);
+  }
+
+  public final class MapboxRouteAlertsDisplayer {
+    ctor public MapboxRouteAlertsDisplayer(com.mapbox.navigation.ui.routealert.MapboxRouteAlertsDisplayOptions options);
+    method public void onNewRouteAlerts(java.util.List<? extends com.mapbox.navigation.base.trip.model.alert.RouteAlert> routeAlerts);
+    method public void onStyleLoaded(com.mapbox.mapboxsdk.maps.Style style);
+    field public static final com.mapbox.navigation.ui.routealert.MapboxRouteAlertsDisplayer.Companion! Companion;
+  }
+
+  public static final class MapboxRouteAlertsDisplayer.Companion {
+    method public com.mapbox.mapboxsdk.style.layers.PropertyValue<?>![] getMapboxRouteAlertLineLayerProperties(@ColorInt int color, float width);
+    method public com.mapbox.mapboxsdk.style.layers.PropertyValue<?>![] getMapboxRouteAlertSymbolLayerProperties();
+    method public com.mapbox.mapboxsdk.style.layers.PropertyValue<?>![] getMapboxTunnelNameLayerProperties();
+  }
+
+  public final class RouteAlertModelToll {
+    ctor public RouteAlertModelToll(com.mapbox.geojson.Point coordinate, String tollDescription);
+    method public com.mapbox.geojson.Point component1();
+    method public String component2();
+    method public com.mapbox.navigation.ui.routealert.RouteAlertModelToll copy(com.mapbox.geojson.Point coordinate, String tollDescription);
+    method public com.mapbox.geojson.Point getCoordinate();
+    method public String getTollDescription();
+  }
+
+  public final class RouteAlertToll {
+    ctor public RouteAlertToll(com.mapbox.navigation.ui.routealert.RouteAlertViewOptions routeAlertViewOptions);
+    method public void onNewRouteAlerts(java.util.List<? extends com.mapbox.navigation.base.trip.model.alert.RouteAlert> routeAlerts);
+    method public void onNewRouteTollAlerts(java.util.List<com.mapbox.navigation.ui.routealert.RouteAlertModelToll> tollAlertModels);
+    method public void onStyleLoaded(com.mapbox.mapboxsdk.maps.Style newStyle);
+    field public static final com.mapbox.navigation.ui.routealert.RouteAlertToll.Companion! Companion;
+  }
+
+  public static final class RouteAlertToll.Companion {
+  }
+
+  public final class RouteAlertViewOptions {
+    method public android.content.Context getContext();
+    method public android.graphics.drawable.Drawable? getDrawable();
+    method public com.mapbox.mapboxsdk.style.layers.PropertyValue<?>![] getProperties();
+    method public com.mapbox.mapboxsdk.maps.Style getStyle();
+    method public com.mapbox.navigation.ui.routealert.RouteAlertViewOptions.Builder toBuilder();
+  }
+
+  public static final class RouteAlertViewOptions.Builder {
+    ctor public RouteAlertViewOptions.Builder(android.content.Context context, com.mapbox.mapboxsdk.maps.Style style);
+    method public com.mapbox.navigation.ui.routealert.RouteAlertViewOptions build();
+    method public com.mapbox.navigation.ui.routealert.RouteAlertViewOptions.Builder drawable(android.graphics.drawable.Drawable drawable);
+    method public com.mapbox.navigation.ui.routealert.RouteAlertViewOptions.Builder properties(com.mapbox.mapboxsdk.style.layers.PropertyValue<?>[] properties);
   }
 
 }
