@@ -18,7 +18,7 @@ import com.mapbox.navigation.base.trip.model.alert.RouteAlert
 import com.mapbox.navigation.base.trip.model.alert.TunnelEntranceAlert
 import com.mapbox.navigation.base.trip.model.alert.toLineString
 import com.mapbox.navigation.ui.R
-import com.mapbox.navigation.ui.routealert.MapboxRouteAlert.Companion.generateLineLayerProperties
+import com.mapbox.navigation.ui.routealert.MapboxRouteAlert.Companion.getMapboxRouteAlertLineLayerProperties
 import com.mapbox.navigation.ui.routealert.MapboxRouteAlert.Companion.getMapboxTunnelNameLayerProperties
 
 class RouteAlertTunnel(style: Style,
@@ -28,7 +28,7 @@ class RouteAlertTunnel(style: Style,
     constructor(style: Style,
                 context: Context) : this(style = style,
         tunnelDrawable = ContextCompat.getDrawable(context, R.drawable.mapbox_ic_route_alert_tunnel)!!,
-        generateLineLayerProperties(MAPBOX_TUNNEL_LINE_COLOR, MAPBOX_TUNNEL_LINE_WIDTH),
+        getMapboxRouteAlertLineLayerProperties(MAPBOX_TUNNEL_LINE_COLOR, MAPBOX_TUNNEL_LINE_WIDTH),
         getMapboxTunnelNameLayerProperties())
 
     private var routeLineString: LineString? = null

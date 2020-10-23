@@ -11,13 +11,13 @@ import com.mapbox.mapboxsdk.style.sources.GeoJsonSource
 import com.mapbox.navigation.base.trip.model.alert.RestrictedAreaAlert
 import com.mapbox.navigation.base.trip.model.alert.RouteAlert
 import com.mapbox.navigation.base.trip.model.alert.toLineString
-import com.mapbox.navigation.ui.routealert.MapboxRouteAlert.Companion.generateLineLayerProperties
+import com.mapbox.navigation.ui.routealert.MapboxRouteAlert.Companion.getMapboxRouteAlertLineLayerProperties
 
 class RouteAlertRestrictedArea(style: Style,
                                restrictedAreaProperties: Array<PropertyValue<out Any>>) {
     constructor(style: Style) : this(
         style = style,
-        restrictedAreaProperties = generateLineLayerProperties(
+        restrictedAreaProperties = getMapboxRouteAlertLineLayerProperties(
             MAPBOX_RESTRICTED_AREA_LINE_COLOR,
             MAPBOX_RESTRICTED_AREA_LINE_WIDTH
         )

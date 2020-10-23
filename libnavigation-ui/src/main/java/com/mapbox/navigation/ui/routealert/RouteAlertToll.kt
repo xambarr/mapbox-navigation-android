@@ -15,7 +15,7 @@ import com.mapbox.navigation.base.trip.model.alert.RouteAlert
 import com.mapbox.navigation.base.trip.model.alert.TollCollectionAlert
 import com.mapbox.navigation.base.trip.model.alert.TollCollectionType
 import com.mapbox.navigation.ui.R
-import com.mapbox.navigation.ui.routealert.MapboxRouteAlert.Companion.generateSymbolLayerProperties
+import com.mapbox.navigation.ui.routealert.MapboxRouteAlert.Companion.getMapboxRouteAlertSymbolLayerProperties
 
 class RouteAlertToll(style: Style,
                      drawable: Drawable,
@@ -24,7 +24,7 @@ class RouteAlertToll(style: Style,
                 context: Context) : this(
         style = style,
         drawable = ContextCompat.getDrawable(context, R.drawable.mapbox_ic_route_alert_toll)!!,
-        *generateSymbolLayerProperties())
+        *getMapboxRouteAlertSymbolLayerProperties())
 
     private val tollCollectionsSource = GeoJsonSource(MAPBOX_TOLL_COLLECTIONS_SOURCE)
     private val tollCollectionsLayer = SymbolLayer(MAPBOX_TOLL_COLLECTIONS_LAYER,

@@ -23,6 +23,7 @@ import com.mapbox.navigation.examples.utils.Utils
 import com.mapbox.navigation.ui.camera.NavigationCamera
 import com.mapbox.navigation.ui.map.NavigationMapboxMap
 import com.mapbox.navigation.ui.routealert.MapboxRouteAlert
+import com.mapbox.navigation.ui.routealert.RouteAlertOption
 import kotlinx.android.synthetic.main.activity_replay_route_layout.mapView
 import kotlinx.android.synthetic.main.activity_route_alerts.distanceRemainingText
 import kotlin.math.absoluteValue
@@ -83,7 +84,7 @@ class RouteAlertsActivity : AppCompatActivity() {
                     mapboxReplayer.play()
                 }
 
-                mapboxRouteAlert = MapboxRouteAlert(this, style)
+                mapboxRouteAlert = MapboxRouteAlert(this, style, RouteAlertOption.ROUTE_ALERT_RESTRICTED_AREA.option or RouteAlertOption.ROUTE_ALERT_TOLL.option)
                 mapboxRouteAlert.setRouteLineString(routeLineString)
             }
         }

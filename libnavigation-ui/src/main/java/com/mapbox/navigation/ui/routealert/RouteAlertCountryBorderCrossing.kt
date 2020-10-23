@@ -14,7 +14,7 @@ import com.mapbox.mapboxsdk.style.sources.GeoJsonSource
 import com.mapbox.navigation.base.trip.model.alert.CountryBorderCrossingAlert
 import com.mapbox.navigation.base.trip.model.alert.RouteAlert
 import com.mapbox.navigation.ui.R
-import com.mapbox.navigation.ui.routealert.MapboxRouteAlert.Companion.generateSymbolLayerProperties
+import com.mapbox.navigation.ui.routealert.MapboxRouteAlert.Companion.getMapboxRouteAlertSymbolLayerProperties
 
 class RouteAlertCountryBorderCrossing(
     style: Style,
@@ -29,7 +29,7 @@ class RouteAlertCountryBorderCrossing(
             context,
             R.drawable.mapbox_ic_route_alert_country_border_crossing
         )!!,
-        generateSymbolLayerProperties()
+        getMapboxRouteAlertSymbolLayerProperties()
     )
 
     private val countryBorderCrossingSource = GeoJsonSource(MAPBOX_COUNTRY_BORDER_CROSSING_SOURCE)

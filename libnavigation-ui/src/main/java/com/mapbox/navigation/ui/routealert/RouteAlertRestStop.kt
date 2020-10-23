@@ -29,7 +29,7 @@ class RouteAlertRestStop(
             context,
             R.drawable.mapbox_ic_route_alert_rest_stop
         )!!,
-        MapboxRouteAlert.generateSymbolLayerProperties()
+        MapboxRouteAlert.getMapboxRouteAlertSymbolLayerProperties()
     )
 
     private val restStopSource = GeoJsonSource(MAPBOX_REST_STOP_SOURCE)
