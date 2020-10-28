@@ -683,6 +683,14 @@ class MapboxNavigation(
     }
 
     /**
+     * API used to enable/disable route refresh.
+     * By default route refresh is enabled.
+     */
+    fun toggleRouteRefresh(isEnabled: Boolean) {
+        if (isEnabled) routeRefreshController.start() else routeRefreshController.stop()
+    }
+
+    /**
      * Register a [NavigationSessionStateObserver] to be notified of the various Session states. Not publicly available
      */
     internal fun registerNavigationSessionObserver(
