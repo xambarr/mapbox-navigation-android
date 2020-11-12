@@ -60,6 +60,7 @@ internal class LocationsCollectorImpl(
     }
 
     override fun onRawLocationChanged(rawLocation: Location) {
+        logger?.d(TAG, Message("onRawLocationChanged $rawLocation"))
         accumulateLocation(rawLocation)
         accumulatePostEventLocation(rawLocation)
     }

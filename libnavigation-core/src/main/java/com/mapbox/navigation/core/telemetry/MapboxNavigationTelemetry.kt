@@ -50,6 +50,7 @@ import com.mapbox.navigation.utils.internal.JobControl
 import com.mapbox.navigation.utils.internal.ThreadController
 import com.mapbox.navigation.utils.internal.Time
 import com.mapbox.navigation.utils.internal.ifNonNull
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -137,7 +138,7 @@ internal object MapboxNavigationTelemetry :
     private var routeProgress: RouteProgress? = null
     private var originalRoute: DirectionsRoute? = null
     private var needStartSession = false
-    private var jobControl: JobControl = ThreadController.getMainScopeAndRootJob()
+    private lateinit var jobControl: JobControl
 
     /**
      * This method must be called before using the Telemetry object
@@ -150,6 +151,7 @@ internal object MapboxNavigationTelemetry :
         locationsCollector: LocationsCollector = LocationsCollectorImpl(logger)
     ) {
         reset()
+        jobControl = ThreadController.getMainScopeAndRootJob()
         dynamicFreeDriveValues.reset()
         sessionState = IDLE
         this.logger = logger
@@ -217,6 +219,7 @@ internal object MapboxNavigationTelemetry :
             unregisterArrivalObserver(this@MapboxNavigationTelemetry)
         }
         MapboxMetricsReporter.disable()
+        jobControl.scope.cancel()
     }
 
     override fun onRouteProgressChanged(routeProgress: RouteProgress) {
@@ -282,7 +285,7 @@ internal object MapboxNavigationTelemetry :
         log("trackFreeDrive $type")
 
         fun createFreeDriveEvent() {
-            log("createFreeDriveEvent")
+            log("createFreeDriveEvent $type")
             if (type == START) {
                 dynamicFreeDriveValues.run {
                     sessionId = obtainUniversalUniqueIdentifier()
@@ -307,8 +310,10 @@ internal object MapboxNavigationTelemetry :
             jobControl.scope.launch {
                 var waitForLocation = true
                 while (waitForLocation) {
+                    log("location not ready")
                     delay(50)
                     if (locationsCollector.lastLocation != null) {
+                        log("location ready")
                         waitForLocation = false
                         createFreeDriveEvent()
                     }
