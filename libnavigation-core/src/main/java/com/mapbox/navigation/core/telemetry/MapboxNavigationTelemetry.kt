@@ -542,7 +542,6 @@ internal object MapboxNavigationTelemetry :
         resetRouteProgress()
         needHandleReroute = false
         needStartSession = false
-        jobControl.job.cancelChildren()
     }
 
     private fun resetRouteProgress() {
